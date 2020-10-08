@@ -884,7 +884,7 @@ mod test {
     use bitcoin::blockdata::script::Builder;
     use bitcoin::blockdata::transaction::{OutPoint, TxIn, TxOut};
     use bitcoin::network::constants::Network;
-    use bitcoin::util::bip32::ChildNumber;
+    use bitcoin::util::{bip32::ChildNumber, psbt::serialize::Deserialize};
     use hex::decode;
     use rand::Rng;
     use serde_json::Value;
@@ -1387,5 +1387,116 @@ mod test {
                 );
             }
         }
+    }
+
+    #[test]
+    fn witness_multisig_tests() {
+        let mnemonic = Mnemonic::from_str(
+            "upgrade chronic stay north wedding dawn suffer silver behave bitter differ tourist",
+        )
+        .unwrap();
+        let mut master =
+            MasterAccount::from_mnemonic(&mnemonic, 0, Network::Bitcoin, "", None).unwrap();
+        let mut unlocker = Unlocker::new_for_master(&master, "").unwrap();
+        let account =
+            Account::new(&mut unlocker, AccountAddressType::P2WSH(4711), 0, 0, 0).unwrap();
+        master.add_account(account);
+        {
+            let account = master.get_mut((0, 0)).unwrap();
+            const CSV: u16 = 0; // 0 blocks relative lock
+            let scripter = |_pk: &PublicKey, _csv: Option<u16>| {
+                Builder::new()
+                    .push_int(3)
+                    .push_slice(
+                        &hex::decode(
+                            "020e1e9e13a2c6178c0e3cba7f6a6bb18c5363e74f35b7572a620ae72b90685680",
+                        )
+                        .unwrap(),
+                    )
+                    .push_slice(
+                        &hex::decode(
+                            "02264f891c836d99272164b962e511a017e1a1b835d5f30bdc8691c42634e59351",
+                        )
+                        .unwrap(),
+                    )
+                    .push_slice(
+                        &hex::decode(
+                            "02e0bbf72ffa17d4c0654515c8541df02958c3ef82bc09a825c1c55aa8a892afbb",
+                        )
+                        .unwrap(),
+                    )
+                    .push_slice(
+                        &hex::decode(
+                            "031f26b9d6ac186f65ef0a1b093371e99e8e17aa6d3636f7634920479df5ae5a77",
+                        )
+                        .unwrap(),
+                    )
+                    .push_slice(
+                        &hex::decode(
+                            "031f5bd798116f9701794da6904ca0d26d06e24ba920785e48671c91c35dad756e",
+                        )
+                        .unwrap(),
+                    )
+                    .push_slice(
+                        &hex::decode(
+                            "036eb794bc2b512233ec9fc8cd60e2e4ba31eb1f49796cb380ecd9898147a9ca86",
+                        )
+                        .unwrap(),
+                    )
+                    .push_slice(
+                        &hex::decode(
+                            "03a0e5c6c0212cf6d0c60867b9107d461c5e5790b032f6a5d33b3319332f1d9130",
+                        )
+                        .unwrap(),
+                    )
+                    .push_int(7)
+                    .push_opcode(all::OP_CHECKMULTISIG)
+                    .into_script()
+                    .to_v0_p2wsh()
+            };
+            account
+                .add_script_key(scripter, Some(&[0x01; 32]), Some(CSV))
+                .unwrap();
+        }
+        let account = master.get_mut((0, 0)).unwrap();
+        let address = Address::p2sh(&account.get_key(0).unwrap().script_code, Network::Bitcoin);
+        assert_eq!(address.to_string(), "325g8XuPdyYav4bZK8k4dA62hQpExMQT6C");
+
+        let prevtx = "020000000001011ad267e6f3a56c2ef77cb469eace3bfffbc631e6c3feb888c5cae1d0f5287232000000002322002055c6e17463500c1c6a91790fd812e3234fecd223dcbb5125c059c6ebd812c3f6fdffffff02d007000000000000160014dd049c8c51a34cf81f74869c09f912c3b9acbf86e4a200000000000017a91404490b65f9dc2e67dbb3e5f4d7835d4582fcc4d9870500473044022013813bf372c1004591042f461c80d748007a8bb26fd38a74dc0798372848b62e02206b368e43361de6c1e894e30cf4c12285723a5cc7ead30f2dad7c01381865d2030147304402205d5181d1f67b07e337280b1463a5a7a79b6eb1faccc13b6bc1185e5fe24ce07802201774fb5cf186646686d732d3edc51b25513ecee74e702a6565e25aabe94779b401473044022079875689c9dccbb3717da3dc0a67331d1e80657ac6645e40bc6ef831aa386e8c022040da3befd5ca11decafdf96365a01e92b177c34858842f9988f3754c10db5d6101f15321020e1e9e13a2c6178c0e3cba7f6a6bb18c5363e74f35b7572a620ae72b906856802102264f891c836d99272164b962e511a017e1a1b835d5f30bdc8691c42634e593512102e0bbf72ffa17d4c0654515c8541df02958c3ef82bc09a825c1c55aa8a892afbb21031f26b9d6ac186f65ef0a1b093371e99e8e17aa6d3636f7634920479df5ae5a7721031f5bd798116f9701794da6904ca0d26d06e24ba920785e48671c91c35dad756e21036eb794bc2b512233ec9fc8cd60e2e4ba31eb1f49796cb380ecd9898147a9ca862103a0e5c6c0212cf6d0c60867b9107d461c5e5790b032f6a5d33b3319332f1d913057aee6cf0900";
+        let prevtx = hex::decode(prevtx).unwrap();
+        let prevtx = Transaction::deserialize(&prevtx).unwrap();
+        let tx = "0200000001bbc8d87eba45f99fa950c4cb513f23c07b0941e1f9058a4d1fcb52c98595c2ec0100000000000000000210270000000000001976a914bda5fbf75d67de006aa4768970113ca8a1d0727688acec7700000000000017a91404490b65f9dc2e67dbb3e5f4d7835d4582fcc4d98700000000";
+        let tx = hex::decode(tx).unwrap();
+        let mut tx = Transaction::deserialize(&tx).unwrap();
+
+        let spend = &prevtx.output[1];
+        assert_eq!(spend.value, 41700);
+
+        assert_eq!(
+            Address::from_script(&spend.script_pubkey, Network::Bitcoin)
+                .unwrap()
+                .to_string(),
+            "325g8XuPdyYav4bZK8k4dA62hQpExMQT6C"
+        );
+        assert_eq!(
+            Address::p2sh(&account.instantiated[0].script_code, Network::Bitcoin).to_string(),
+            "325g8XuPdyYav4bZK8k4dA62hQpExMQT6C"
+        );
+
+        // This assert is essentially replicating the comparison in the find function of src/accounts.rs line 652
+        // That is where the signing skips at the moment.
+        assert_eq!(
+            spend.script_pubkey.to_v0_p2wsh(),
+            account.instantiated[0].address.script_pubkey()
+        );
+
+        master
+            .sign(
+                &mut tx,
+                SigHashType::All,
+                &(|_| Some(prevtx.output[1].clone())),
+                &mut unlocker,
+            )
+            .unwrap();
     }
 }
