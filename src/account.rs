@@ -884,7 +884,7 @@ mod test {
     use bitcoin::blockdata::script::Builder;
     use bitcoin::blockdata::transaction::{OutPoint, TxIn, TxOut};
     use bitcoin::network::constants::Network;
-    use bitcoin::util::{bip32::ChildNumber, psbt::serialize::Deserialize};
+    use bitcoin::util::{address::AddressType, bip32::ChildNumber, psbt::serialize::Deserialize};
     use hex::decode;
     use rand::Rng;
     use serde_json::Value;
@@ -1472,22 +1472,46 @@ mod test {
         let spend = &prevtx.output[1];
         assert_eq!(spend.value, 41700);
 
+        let addr_spend = Address::from_script(&spend.script_pubkey, Network::Bitcoin).unwrap();
+        let addr_account = Address::p2sh(&account.instantiated[0].script_code, Network::Bitcoin);
+
         assert_eq!(
-            Address::from_script(&spend.script_pubkey, Network::Bitcoin)
-                .unwrap()
-                .to_string(),
+            addr_spend.to_string(),
             "325g8XuPdyYav4bZK8k4dA62hQpExMQT6C"
         );
         assert_eq!(
-            Address::p2sh(&account.instantiated[0].script_code, Network::Bitcoin).to_string(),
+            addr_account.to_string(),
             "325g8XuPdyYav4bZK8k4dA62hQpExMQT6C"
+        );
+        assert_eq!(
+            addr_spend.address_type().unwrap(),
+            AddressType::P2sh
+        );
+        assert_eq!(
+            addr_account.address_type().unwrap(),
+            AddressType::P2sh
+        );
+
+        let spend_script = spend.script_pubkey.to_v0_p2wsh();
+        let account_script = account.instantiated[0].address.script_pubkey();
+        assert_eq!(
+            spend_script.is_witness_program(),
+            account_script.is_witness_program()
+        );
+        assert_eq!(
+            spend_script.is_v0_p2wsh(),
+            account_script.is_v0_p2wsh()
+        );
+        assert_eq!(
+            spend_script.is_p2sh(),
+            account_script.is_p2sh()
         );
 
         // This assert is essentially replicating the comparison in the find function of src/accounts.rs line 652
         // That is where the signing skips at the moment.
         assert_eq!(
-            spend.script_pubkey.to_v0_p2wsh(),
-            account.instantiated[0].address.script_pubkey()
+            spend_script,
+            account_script
         );
 
         master
